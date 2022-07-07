@@ -3,12 +3,6 @@ package server
 import (
 	"time"
 
-	"git.inke.cn/BackendPlatform/jaeger-client-go"
-	jaegerconfig "git.inke.cn/BackendPlatform/jaeger-client-go/config"
-	"git.inke.cn/inkelogic/daenerys/breaker"
-	"git.inke.cn/inkelogic/daenerys/log"
-	"git.inke.cn/inkelogic/daenerys/ratelimit"
-	"git.inke.cn/tpc/inf/go-upstream/registry"
 	"github.com/opentracing/opentracing-go"
 )
 
@@ -20,7 +14,6 @@ const (
 )
 
 type Options struct {
-	logger             log.Kit
 	tracer             opentracing.Tracer
 	serviceName        string
 	port               int
@@ -29,11 +22,6 @@ type Options struct {
 	idleTimeout        time.Duration // server keep conn
 	certFile           string
 	keyFile            string
-	tags               map[string]string
-	manager            *registry.ServiceManager
-	registry           registry.Backend
-	breaker            *breaker.Config
-	limiter            *ratelimit.Config
 	reqBodyLogOff      bool
 	respBodyLogMaxSize int
 	recoverPanic       bool
@@ -46,34 +34,6 @@ func newOptions(options ...Option) Options {
 	for _, o := range options {
 		o(&opts)
 	}
-
-	if opts.logger == nil {
-		opts.logger = log.NewKit(
-			log.New("./logs/business.log"), // bus
-			log.New("./logs/access.log"),   // acc
-			log.Stdout(),                   // err
-		)
-		opts.logger.A().SetRotateByHour()
-		opts.logger.B().SetRotateByHour()
-	}
-
-	if opts.tracer == nil {
-		cfg := jaegerconfig.Configuration{
-			Sampler: &jaegerconfig.SamplerConfig{Type: jaeger.SamplerTypeRemote},
-			Reporter: &jaegerconfig.ReporterConfig{
-				LogSpans:            false,
-				BufferFlushInterval: 1 * time.Second,
-				LocalAgentHostPort:  "127.0.0.1:6831",
-			},
-		}
-		sName := opts.serviceName
-		if len(sName) == 0 {
-			sName = "http-server-default"
-		}
-		tracer, _, _ := cfg.New(sName)
-		opts.tracer = tracer
-	}
-
 	if opts.readTimeout == 0 {
 		opts.readTimeout = HTTPReadTimeout
 	}
@@ -87,24 +47,6 @@ func newOptions(options ...Option) Options {
 		opts.respBodyLogMaxSize = defaultBodySize
 	}
 	return opts
-}
-
-func Limiter(lim *ratelimit.Config) Option {
-	return func(o *Options) {
-		o.limiter = lim
-	}
-}
-
-func Breaker(brk *breaker.Config) Option {
-	return func(o *Options) {
-		o.breaker = brk
-	}
-}
-
-func Logger(logger log.Kit) Option {
-	return func(o *Options) {
-		o.logger = logger
-	}
 }
 
 func Tracer(tracer opentracing.Tracer) Option {
@@ -158,26 +100,6 @@ func CertFile(file string) Option {
 func KeyFile(file string) Option {
 	return func(o *Options) {
 		o.keyFile = file
-	}
-}
-
-func Tags(tags map[string]string) Option {
-	return func(o *Options) {
-		o.tags = tags
-	}
-}
-
-func Manager(re *registry.ServiceManager) Option {
-	return func(o *Options) {
-		o.manager = re
-	}
-}
-
-func Registry(r registry.Backend) Option {
-	return func(o *Options) {
-		if r != nil {
-			o.registry = r
-		}
 	}
 }
 

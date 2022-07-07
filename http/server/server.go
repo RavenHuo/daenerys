@@ -1,75 +1,57 @@
 package server
 
 import (
-	"bytes"
 	context2 "context"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"git.inke.cn/BackendPlatform/golang/logging"
-	"git.inke.cn/BackendPlatform/jaeger-client-go"
-	"git.inke.cn/inkelogic/daenerys/config/encoder/json"
-	"git.inke.cn/inkelogic/daenerys/internal/core"
-	"git.inke.cn/inkelogic/daenerys/internal/kit/ecode"
-	"git.inke.cn/inkelogic/daenerys/internal/kit/metric"
-	"git.inke.cn/inkelogic/daenerys/internal/kit/namespace"
-	"git.inke.cn/inkelogic/daenerys/internal/kit/tracing"
-	"git.inke.cn/inkelogic/daenerys/log"
-	"git.inke.cn/inkelogic/daenerys/utils"
-	dutils "git.inke.cn/inkelogic/daenerys/utils"
-	"git.inke.cn/tpc/inf/go-tls"
-	"git.inke.cn/tpc/inf/go-upstream/config"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	opentracinglog "github.com/opentracing/opentracing-go/log"
+	"github.com/RavenHuo/daenerys/internal/tls"
+	"github.com/RavenHuo/daenerys/utils"
 	"golang.org/x/net/context"
 )
+
+// core plugin encapsulation
+type HandlerFunc func(c *Context)
 
 type Server interface {
 	Router
 	Run(addr ...string) error
 	Stop() error
-	Use(p ...HandlerFunc)
+	Filters(p ...HandlerFilter)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 type server struct {
 	RouterMgr
-	options        Options
-	pluginMu       sync.Mutex
-	plugins        []core.Plugin
-	trees          methodTrees
-	srv            *http.Server
-	registryConfig *config.Register
-	running        int32
-	stop           chan struct{}
-	once           sync.Once
-	pool           sync.Pool
-	paths          []string
-	onHijackMode   bool
+	options      Options
+	pluginMu     sync.Mutex
+	trees        methodTrees
+	srv          *http.Server
+	running      int32
+	once         sync.Once
+	pool         sync.Pool
+	paths        []string
+	onHijackMode bool
+	filter       []HandlerFilter
 }
 
 func NewServer(options ...Option) Server {
 	context2.Background()
 	s := &server{
 		RouterMgr: RouterMgr{
-			plugins:  nil,
-			basePath: "/",
+			intercepts: nil,
+			basePath:   "/",
 		},
 		trees:    make(methodTrees, 0, 10),
 		pluginMu: sync.Mutex{},
-		plugins:  make([]core.Plugin, 0, 2),
-		stop:     make(chan struct{}),
 		pool:     sync.Pool{},
+		filter:   make([]HandlerFilter, 0, 2),
 	}
 	s.pool.New = func() interface{} {
 		return s.allocContext()
@@ -116,24 +98,16 @@ func (s *server) Run(addr ...string) error {
 		}
 		ln, e := net.Listen("tcp", host)
 		if e != nil {
-			logging.GenLogf("start http server on %s failed, %v", host, e)
 			fmt.Printf("start http server on %s failed, %v\n", host, e)
 			err = e
 			return
 		}
-		logging.GenLogf("start http server on %s", host)
 		fmt.Printf("start http server on %s\n", host)
-		var cfg *config.Register
-		cfg, err = dutils.Register(s.options.manager, s.options.serviceName, "http", s.options.tags, config.LocalIPString(), port)
-		if err != nil {
-			return
-		}
-		s.registryConfig = cfg
 
-		if !atomic.CompareAndSwapInt32(&s.running, 0, 1) {
-			err = fmt.Errorf("server has been running")
-			return
-		}
+		//if !atomic.CompareAndSwapInt32(&s.running, 0, 1) {
+		//	err = fmt.Errorf("server has been running")
+		//	return
+		//}
 		if len(s.options.certFile) == 0 || len(s.options.keyFile) == 0 {
 			err = s.srv.Serve(ln)
 		} else {
@@ -141,16 +115,11 @@ func (s *server) Run(addr ...string) error {
 		}
 		if err != nil {
 			if err == http.ErrServerClosed {
-				logging.GenLogf("http server closed: %v", err)
+				fmt.Printf("http server closed: %v", err)
 				err = nil
 			}
 		}
-		logging.GenLogf("waiting for http server stop")
-		fmt.Println("waiting for http server stop")
-		// waiting for stop done
-		<-s.stop
-		logging.GenLogf("http server stop done")
-		fmt.Println("http server stop done")
+		fmt.Println("http server start success")
 	})
 	return err
 }
@@ -160,21 +129,11 @@ func (s *server) Stop() error {
 		return nil
 	}
 
-	defer close(s.stop)
-
-	if s.options.manager != nil {
-		s.options.manager.Deregister()
-	}
-	// 延迟停服,为了暂时兼容consul状态同步存在延迟的问题
-	time.Sleep(2 * time.Second)
-	log.Stdout().Debugf("delay 2s done, begin gracefully shutdown")
-	logging.GenLogf("delay 2s done, begin gracefully shutdown")
-
 	// gracefully shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if err := s.srv.Shutdown(ctx); err != nil {
 		// Error from closing listeners, or context timeout:
-		logging.GenLogf("gracefully shutdown, err:%v", err)
+		fmt.Printf("gracefully shutdown, err:%v", err)
 	}
 	cancel()
 	return nil
@@ -187,10 +146,6 @@ func (s *server) allocContext() *Context {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var (
-		isSampled bool
-		dumpReq   []byte
-	)
 
 	ctx := s.pool.Get().(*Context)
 	ctx.reset()
@@ -200,107 +155,70 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx.w.reset(w, s.options.respBodyLogMaxSize)
 	ctx.Request = r
 	ctx.Response = ctx.w
-	chain := ctx.chain()
-	ctx.Ctx = tracing.HTTPToContext(s.options.tracer, r, fmt.Sprintf("HTTP Server %s %s", r.Method, ctx.Path))
-	ctx.Namespace = namespace.GetNamespace(ctx.Ctx)
-	ctx.Peer = metric.GetSDName(ctx.Ctx)
+	s.handleHTTPRequest(ctx)
+}
 
-	span := opentracing.SpanFromContext(ctx.Ctx)
-	defer span.Finish()
-
-	ctx.extractBaggage()
-
-	ext.PeerService.Set(span, ctx.Peer)
-	ext.Component.Set(span, "inkelogic/go-http-server")
-	span.LogFields(opentracinglog.String("url", r.URL.String()))
-	span.LogFields(opentracinglog.String("event", "beginServe"))
-	if !s.options.reqBodyLogOff && r.Body != nil {
-		// piece reader
-		lr := io.LimitReader(r.Body, 200)
-		_, _ = ctx.bodyBuff.ReadFrom(lr)
-
-		// rebuild body reader
-		nr := bytes.NewBuffer(ctx.bodyBuff.Bytes())
-		mr := io.MultiReader(nr, r.Body)
-		ctx.Request.Body = ioutil.NopCloser(mr)
-	}
-	span.LogFields(opentracinglog.String("event", "read reqBody Done"))
-
-	spanCtx := span.Context()
-	if sc, ok := spanCtx.(jaeger.SpanContext); ok {
-		ctx.traceId = sc.TraceID().String()
-		// sampling record
-		if sc.IsSampled() {
-			isSampled = true
-			dumpReq, _ = httputil.DumpRequest(r, true)
-		}
-	}
-	curTime := ctx.startTime.Format(dutils.TimeFormat)
-	if chain == nil {
+func (s *server) handleHTTPRequest(ctx *Context) {
+	nodeValue := ctx.requestNode()
+	if nodeValue == nil {
 		if s.methodNotAllowed(ctx) {
-			span.LogFields(opentracinglog.String("event", "method not allowed"))
 			ctx.Response.Header().Set("X-Trace-Id", ctx.traceId)
 			ctx.Response.WriteHeader(http.StatusMethodNotAllowed)
 			_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
-			fmt.Printf("%s http server, method not allowd, request %v\n", curTime, *r)
+			fmt.Printf("http server, method not allowd, request %v\n", *ctx.Request)
 			return
 		}
-		span.LogFields(opentracinglog.String("event", "handlers not found"))
+
 		ctx.Response.Header().Set("X-Trace-Id", ctx.traceId)
 		ctx.Response.WriteHeader(http.StatusNotFound)
 		_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusNotFound)))
-		fmt.Printf("%s http server, handlers not found, request %+v\n", curTime, *r)
+		fmt.Printf(" http server, handlers not found, request %+v\n", *ctx.Request)
 		return
 	}
 
-	flow := core.New(chain)
-	ctx.core = flow
 	nCtx := context.WithValue(ctx.Ctx, iCtxKey, ctx)
 
 	tls.SetContext(nCtx)
 	defer tls.Flush()
 
-	span.LogFields(opentracinglog.String("event", "start coreflow"))
-	ctx.core.Next(nCtx)
-	span.LogFields(opentracinglog.String("event", "coreflow Done"))
+	s.internalHandle(ctx, nodeValue)
 
-	// 优先使用用户设置的status, 服务执行出错设置status=500
-	code := ctx.Response.Status()
-	if !s.onHijackMode {
-		if err := ctx.core.Err(); err != nil {
-			ext.Error.Set(span, true)
-			code = ecode.ConvertHttpStatus(err)
-			ctx.Response.WriteHeader(code)
-			_, _ = ctx.Response.WriteString(err.Error())
+}
+
+// internal handler http request
+func (s *server) internalHandle(ctx *Context, nodeValue *nodeValue) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			ctx.Response.WriteHeader(http.StatusInternalServerError)
+			_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusInternalServerError)))
+			return
 		}
-
-		ctx.writeHeaderOnce()
+	}()
+	// 过滤器
+	filterChain := MakeFilterChain(s.filter)
+	if err := filterChain.DoFilter(ctx); err != nil {
+		ctx.Response.WriteHeader(http.StatusInternalServerError)
+		_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusInternalServerError)))
+		return
 	}
-
-	span.SetTag("inkelogic.code", ctx.BusiCode())
-	ext.HTTPStatusCode.Set(span, uint16(code))
-
-	if isSampled {
-		span.LogFields(
-			opentracinglog.String("req", dutils.Base64(dumpReq)),
-			opentracinglog.String("resp", dutils.Base64(ctx.Response.ByteBody())),
-		)
+	for _, ins := range nodeValue.intercepts {
+		ins.PreHandle(ctx)
 	}
-	span.LogFields(opentracinglog.String("event", "wrote Response Done"))
+	nodeValue.handler(ctx)
+	for _, ins := range nodeValue.intercepts {
+		ins.AfterCompletion(ctx)
+	}
 }
 
-func (s *server) Use(p ...HandlerFunc) {
-	s.pluginMu.Lock()
-	defer s.pluginMu.Unlock()
-	ps := make([]core.Plugin, len(p))
-	for i := range p {
-		ps[i] = p[i]
-	}
-	s.plugins = append(s.plugins, ps...)
+func (s *server) Filters(filters ...HandlerFilter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.filter = append(s.filter, filters...)
 }
 
-func (s *server) addRoute(method, path string, handlers []core.Plugin) {
-	if path[0] != '/' || len(method) == 0 || len(handlers) == 0 {
+func (s *server) addRoute(method, path string, handler HandlerFunc, intercepts []HandlerIntercept) {
+	if path[0] != '/' || len(method) == 0 || len(intercepts) == 0 {
 		return
 	}
 	root := s.trees.get(method)
@@ -308,8 +226,7 @@ func (s *server) addRoute(method, path string, handlers []core.Plugin) {
 		root = new(node)
 		s.trees = append(s.trees, methodTree{method: method, root: root})
 	}
-	ps := s.makeChain(path, handlers)
-	root.addRoute(path, ps)
+	root.addRoute(path, handler, intercepts)
 	s.addPath(path)
 }
 
@@ -326,35 +243,6 @@ func (s *server) addPath(path string) {
 	}
 }
 
-func (s *server) makeChain(path string, handlers []core.Plugin) []core.Plugin {
-	// plugins list:
-	// shared plugins on server: recover -> logging -> (maybe other plugin(s) inject on server)
-	ps := []core.Plugin{
-		s.traceIDHeader(),
-		s.recover(),
-		s.logging(),
-	}
-	s.pluginMu.Lock()
-	for _, v := range s.plugins {
-		vv := v
-		ps = append(ps, vv)
-	}
-	s.pluginMu.Unlock()
-
-	// third plugins effect on server, global scope
-	gPlugins := serverInternalThirdPlugin.OnGlobalStage().Stream()
-	ps = append(ps, gPlugins...)
-
-	// plugins on each path: namespaceKey -> rateLimit-> breaker -> metric -> (outside frame plugin) -> handlers
-	ps = append(ps, s.metric(), s.namespaceKey(), s.rateLimit(), s.breaker(path))
-
-	// third plugins effect on server, global scope
-	rPlugins := serverInternalThirdPlugin.OnRequestStage().Stream()
-	ps = append(ps, rPlugins...)
-	ps = append(ps, handlers...)
-	return ps
-}
-
 func getRemoteIP(r *http.Request) string {
 	for _, h := range []string{"X-Real-Ip"} {
 		addresses := strings.Split(r.Header.Get(h), ",")
@@ -369,15 +257,35 @@ func getRemoteIP(r *http.Request) string {
 	return utils.IPFormat(ip)
 }
 
+// TODO
 func (s *server) uploadServerPath() {
-	body := map[string]interface{}{}
-	body["type"] = 1
-	body["resource_list"] = s.paths
-	body["service"] = s.options.serviceName
-	b, _ := json.NewEncoder().Encode(body)
-	respB, err := tracing.KVPut(b)
-	if err != nil {
-		return
+	//body := map[string]interface{}{}
+	//body["type"] = 1
+	//body["resource_list"] = s.paths
+	//body["service"] = s.options.serviceName
+	//b, _ := json.NewEncoder().Encode(body)
+	//respB, err := tracing.KVPut(b)
+	//if err != nil {
+	//	return
+	//}
+	//logging.GenLogf("sync http server path list to consul response:%q", respB)
+}
+
+// 判断是不是请求方式出错
+func (s *server) methodNotAllowed(ctx *Context) bool {
+	// 405
+	t := s.trees
+	for i, tl := 0, len(t); i < tl; i++ {
+		if t[i].method == ctx.Request.Method {
+			continue
+		}
+		root := t[i].root
+		// plugin, urlparam, found, matchPath expression
+		nodeValue := root.getValue(ctx.Request.URL.Path, ctx.Params, false)
+		// 存在 路径相同，但是请求方式不一样的node
+		if nodeValue != nil {
+			return true
+		}
 	}
-	logging.GenLogf("sync http server path list to consul response:%q", respB)
+	return false
 }

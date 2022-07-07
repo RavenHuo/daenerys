@@ -3,99 +3,93 @@ package server
 import (
 	"path"
 	"sync"
-
-	"git.inke.cn/inkelogic/daenerys/internal/core"
 )
 
 // router
 type Router interface {
-	GROUP(string, ...HandlerFunc) *RouterMgr
-	GET(string, ...HandlerFunc) Router
-	POST(string, ...HandlerFunc) Router
-	GETPOST(string, ...HandlerFunc) Router
-	DELETE(string, ...HandlerFunc) Router
-	PATCH(string, ...HandlerFunc) Router
-	PUT(string, ...HandlerFunc) Router
-	OPTIONS(string, ...HandlerFunc) Router
-	HEAD(string, ...HandlerFunc) Router
+	GROUP(string, ...HandlerIntercept) *RouterMgr
+	GET(string, HandlerFunc, ...HandlerIntercept) Router
+	POST(string, HandlerFunc, ...HandlerIntercept) Router
+	DELETE(string, HandlerFunc, ...HandlerIntercept) Router
+	PATCH(string, HandlerFunc, ...HandlerIntercept) Router
+	PUT(string, HandlerFunc, ...HandlerIntercept) Router
+	OPTIONS(string, HandlerFunc, ...HandlerIntercept) Router
+	HEAD(string, HandlerFunc, ...HandlerIntercept) Router
 }
 
 type RouterMgr struct {
-	plugins  []core.Plugin
-	basePath string
-	server   *server
-	mu       sync.Mutex
+	intercepts  []HandlerIntercept
+	handlerFunc HandlerFunc
+	basePath    string
+	server      *server
+	mu          sync.Mutex
 }
 
 // 实现Router
-func (mgr *RouterMgr) GROUP(relativePath string, handleFunc ...HandlerFunc) *RouterMgr {
-	ps := make([]core.Plugin, len(handleFunc))
-	for i, h := range handleFunc {
+func (mgr *RouterMgr) GROUP(relativePath string, intercepts ...HandlerIntercept) *RouterMgr {
+	ps := make([]HandlerIntercept, len(intercepts))
+	for i, h := range intercepts {
 		ps[i] = h
 	}
 	return &RouterMgr{
-		plugins:  mgr.combineHandlers(ps),
-		basePath: mgr.absolutePath(relativePath),
-		server:   mgr.server,
-		mu:       sync.Mutex{},
+		intercepts: mgr.combineHandlerIntercepts(ps),
+		basePath:   mgr.absolutePath(relativePath),
+		server:     mgr.server,
+		mu:         sync.Mutex{},
 	}
 }
 
-func (mgr *RouterMgr) GETPOST(relativePath string, handlers ...HandlerFunc) Router {
-	mgr.handle("GET", relativePath, handlers...)
-	mgr.handle("POST", relativePath, handlers...)
-	return mgr
+func (mgr *RouterMgr) POST(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("POST", relativePath, handler, intercepts...)
 }
 
-func (mgr *RouterMgr) POST(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("POST", relativePath, handlers...)
+func (mgr *RouterMgr) GET(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("GET", relativePath, handler, intercepts...)
 }
 
-func (mgr *RouterMgr) GET(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("GET", relativePath, handlers...)
+func (mgr *RouterMgr) DELETE(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("DELETE", relativePath, handler, intercepts...)
 }
 
-func (mgr *RouterMgr) DELETE(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("DELETE", relativePath, handlers...)
+func (mgr *RouterMgr) PATCH(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("PATCH", relativePath, handler, intercepts...)
 }
 
-func (mgr *RouterMgr) PATCH(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("PATCH", relativePath, handlers...)
+func (mgr *RouterMgr) PUT(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("PUT", relativePath, handler, intercepts...)
 }
 
-func (mgr *RouterMgr) PUT(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("PUT", relativePath, handlers...)
+func (mgr *RouterMgr) OPTIONS(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("OPTIONS", relativePath, handler, intercepts...)
 }
 
-func (mgr *RouterMgr) OPTIONS(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("OPTIONS", relativePath, handlers...)
-}
-
-func (mgr *RouterMgr) HEAD(relativePath string, handlers ...HandlerFunc) Router {
-	return mgr.handle("HEAD", relativePath, handlers...)
+func (mgr *RouterMgr) HEAD(relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
+	return mgr.handle("HEAD", relativePath, handler, intercepts...)
 }
 
 // router internal func
-func (mgr *RouterMgr) handle(httpMethod, relativePath string, handlers ...HandlerFunc) Router {
+func (mgr *RouterMgr) handle(httpMethod, relativePath string, handler HandlerFunc, intercepts ...HandlerIntercept) Router {
 	mgr.mu.Lock()
 	defer mgr.mu.Unlock()
 	absolutePath := mgr.absolutePath(relativePath)
-	hds := make([]core.Plugin, len(handlers))
-	for i, h := range handlers {
-		hds[i] = h
+	his := make([]HandlerIntercept, len(intercepts))
+	for i, h := range intercepts {
+		his[i] = h
 	}
-	h1 := mgr.combineHandlers(hds)
+	handlerIntercepts := mgr.combineHandlerIntercepts(his)
+	sortHandlerIntercept(handlerIntercepts)
 	// server has a tree, to add plugins
-	mgr.server.addRoute(httpMethod, absolutePath, h1)
+	mgr.server.addRoute(httpMethod, absolutePath, handler, handlerIntercepts)
 	return mgr
 }
 
-func (mgr *RouterMgr) combineHandlers(handlers []core.Plugin) []core.Plugin {
-	// group handlers  + handlers
-	finalSize := len(mgr.plugins) + len(handlers)
-	mergedHandlers := make([]core.Plugin, finalSize)
-	copy(mergedHandlers, mgr.plugins)
-	copy(mergedHandlers[len(mgr.plugins):], handlers)
+// 合并拦截器
+// group handlers  + handler
+func (mgr *RouterMgr) combineHandlerIntercepts(handlers []HandlerIntercept) []HandlerIntercept {
+	finalSize := len(mgr.intercepts) + len(handlers)
+	mergedHandlers := make([]HandlerIntercept, finalSize)
+	copy(mergedHandlers, mgr.intercepts)
+	copy(mergedHandlers[len(mgr.intercepts):], handlers)
 	return mergedHandlers
 }
 

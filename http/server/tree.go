@@ -3,8 +3,6 @@ package server
 import (
 	"net/url"
 	"strings"
-
-	"daenerys/core"
 )
 
 // Param is a single URL parameter, consisting of a key and a value.
@@ -88,12 +86,13 @@ type node struct {
 	path     string  // 当前节点相对路径（与祖先节点的 path 拼接可得到完整路径）
 	indices  string  // 所有孩子节点的path[0]组成的字符串
 	children []*node // 孩子节点
-	// flow      core.Core // 当前节点的处理函数（包括中间件）
-	ps        []core.Intercept
-	priority  uint32   // 当前节点及子孙节点的实际路由数量
-	nType     nodeType // 节点类型
-	maxParams uint8    // 子孙节点的最大参数数量
-	wildChild bool     // 孩子节点是否有通配符（wildcard）
+	// 节点的拦截器
+	intercepts  []HandlerIntercept
+	handlerFunc HandlerFunc
+	priority    uint32   // 当前节点及子孙节点的实际路由数量
+	nType       nodeType // 节点类型
+	maxParams   uint8    // 子孙节点的最大参数数量
+	wildChild   bool     // 孩子节点是否有通配符（wildcard）
 }
 
 // increments priority of the given child and reorders if necessary.
@@ -122,7 +121,7 @@ func (n *node) incrementChildPrio(pos int) int {
 
 // addRoute adds a node with the given handle to the path.
 // Not concurrency-safe!
-func (n *node) addRoute(path string, plugins []core.Plugin) {
+func (n *node) addRoute(path string, handle HandlerFunc, intercepts []HandlerIntercept) {
 	fullPath := path
 	n.priority++
 	numParams := countParams(path)
@@ -150,12 +149,12 @@ func (n *node) addRoute(path string, plugins []core.Plugin) {
 			if i < len(n.path) {
 				// 该位置之后，就是新的子节点
 				child := node{
-					path:      n.path[i:],
-					wildChild: n.wildChild,
-					indices:   n.indices,
-					children:  n.children,
-					ps:        n.ps,
-					priority:  n.priority - 1,
+					path:       n.path[i:],
+					wildChild:  n.wildChild,
+					indices:    n.indices,
+					children:   n.children,
+					intercepts: n.intercepts,
+					priority:   n.priority - 1,
 				}
 
 				// Update maxParams (max of all children)
@@ -169,7 +168,7 @@ func (n *node) addRoute(path string, plugins []core.Plugin) {
 				n.children = []*node{&child}
 				n.indices = string([]byte{n.path[i]})
 				n.path = path[:i]
-				n.ps = nil
+				n.intercepts = nil
 				n.wildChild = false
 			}
 
@@ -236,24 +235,26 @@ func (n *node) addRoute(path string, plugins []core.Plugin) {
 					n.incrementChildPrio(len(n.indices) - 1)
 					n = child
 				}
-				n.insertChild(numParams, path, fullPath, plugins)
+				n.insertChild(numParams, path, fullPath, handle, intercepts)
 				return
 
 			} else if i == len(path) { // Make node a (in-path) leaf
-				if n.ps != nil {
+				if n.intercepts != nil {
 					panic("handlers are already registered for path '" + fullPath + "'")
 				}
-				n.ps = plugins
+				n.intercepts = intercepts
+				n.handlerFunc = handle
 			}
 			return
 		}
 	} else { // Empty tree
-		n.insertChild(numParams, path, fullPath, plugins)
+		n.insertChild(numParams, path, fullPath, handle, intercepts)
 		n.nType = root
 	}
 }
 
-func (n *node) insertChild(numParams uint8, path string, fullPath string, plugins []core.Plugin) {
+func (n *node) insertChild(numParams uint8, path string, fullPath string, handle HandlerFunc, intercepts []HandlerIntercept) {
+	sortHandlerIntercept(intercepts)
 	var offset int // already handled bytes of the path
 
 	// find prefix until first wildcard (beginning with ':' or '*')
@@ -349,11 +350,12 @@ func (n *node) insertChild(numParams uint8, path string, fullPath string, plugin
 
 			// second node: node holding the variable
 			child = &node{
-				path:      path[i:],
-				nType:     catchAll,
-				maxParams: 1,
-				ps:        plugins,
-				priority:  1,
+				path:        path[i:],
+				nType:       catchAll,
+				maxParams:   1,
+				intercepts:  intercepts,
+				handlerFunc: handle,
+				priority:    1,
 			}
 			n.children = []*node{child}
 
@@ -363,15 +365,23 @@ func (n *node) insertChild(numParams uint8, path string, fullPath string, plugin
 
 	// insert remaining path part and handle to the leaf
 	n.path = path[offset:]
-	n.ps = plugins
+	n.intercepts = intercepts
+	n.handlerFunc = handle
+}
+
+type nodeValue struct {
+	handler    HandlerFunc
+	intercepts []HandlerIntercept
+	p          Params
+	tsr        bool
+	fullPath   string
 }
 
 //nolint:unparam
-func (n *node) getValue(path string, po Params, unescape bool) (plugins []core.Plugin, p Params, tsr bool, mpath string) {
-	p = po
+func (n *node) getValue(path string, po Params, unescape bool) (value *nodeValue) {
 walk: // Outer loop for walking the tree
 	for {
-		mpath += n.path
+		value.fullPath += n.path
 		if len(path) > len(n.path) {
 			if path[:len(n.path)] == n.path {
 				path = path[len(n.path):]
@@ -390,13 +400,13 @@ walk: // Outer loop for walking the tree
 					// Nothing found.
 					// We can recommend to redirect to the same URL without a
 					// trailing slash if a leaf exists for that path.
-					tsr = path == "/" && n.ps != nil
+					value.tsr = path == "/" && n.intercepts != nil
 					return
 				}
 
 				// handle wildcard child
 				n = n.children[0]
-				mpath += n.path
+				value.fullPath += n.path
 				switch n.nType {
 				case param:
 					// find param end (either '/' or path end)
@@ -406,20 +416,20 @@ walk: // Outer loop for walking the tree
 					}
 
 					// save param value
-					if cap(p) < int(n.maxParams) {
-						p = make(Params, 0, n.maxParams)
+					if cap(value.p) < int(n.maxParams) {
+						value.p = make(Params, 0, n.maxParams)
 					}
-					i := len(p)
-					p = p[:i+1] // expand slice within preallocated capacity
-					p[i].Key = n.path[1:]
+					i := len(value.p)
+					value.p = value.p[:i+1] // expand slice within preallocated capacity
+					value.p[i].Key = n.path[1:]
 					val := path[:end]
 					if unescape {
 						var err error
-						if p[i].Value, err = url.QueryUnescape(val); err != nil {
-							p[i].Value = val // fallback, in case of error
+						if value.p[i].Value, err = url.QueryUnescape(val); err != nil {
+							value.p[i].Value = val // fallback, in case of error
 						}
 					} else {
-						p[i].Value = val
+						value.p[i].Value = val
 					}
 
 					// we need to go deeper!
@@ -431,40 +441,42 @@ walk: // Outer loop for walking the tree
 						}
 
 						// ... but we can't
-						tsr = len(path) == end+1
+						value.tsr = len(path) == end+1
 						return
 					}
 
-					if plugins = n.ps; plugins != nil {
+					if value.intercepts = n.intercepts; value.intercepts != nil {
+						value.handler = n.handlerFunc
 						return
 					}
 					if len(n.children) == 1 {
 						// No handle found. Check if a handle for this path + a
 						// trailing slash exists for TSR recommendation
 						n = n.children[0]
-						tsr = n.path == "/" && n.ps != nil
+						value.tsr = n.path == "/" && n.intercepts != nil
 					}
 
 					return
 
 				case catchAll:
 					// save param value
-					if cap(p) < int(n.maxParams) {
-						p = make(Params, 0, n.maxParams)
+					if cap(value.p) < int(n.maxParams) {
+						value.p = make(Params, 0, n.maxParams)
 					}
-					i := len(p)
-					p = p[:i+1] // expand slice within preallocated capacity
-					p[i].Key = n.path[2:]
+					i := len(value.p)
+					value.p = value.p[:i+1] // expand slice within preallocated capacity
+					value.p[i].Key = n.path[2:]
 					if unescape {
 						var err error
-						if p[i].Value, err = url.QueryUnescape(path); err != nil {
-							p[i].Value = path // fallback, in case of error
+						if value.p[i].Value, err = url.QueryUnescape(path); err != nil {
+							value.p[i].Value = path // fallback, in case of error
 						}
 					} else {
-						p[i].Value = path
+						value.p[i].Value = path
 					}
 
-					plugins = n.ps
+					value.intercepts = n.intercepts
+					value.handler = n.handlerFunc
 					return
 
 				default:
@@ -474,12 +486,13 @@ walk: // Outer loop for walking the tree
 		} else if path == n.path {
 			// We should have reached the node containing the handle.
 			// Check if this node has a handle registered.
-			if plugins = n.ps; plugins != nil {
+			if value.intercepts = n.intercepts; value.intercepts != nil {
+				value.handler = n.handlerFunc
 				return
 			}
 
 			if path == "/" && n.wildChild && n.nType != root {
-				tsr = true
+				value.tsr = true
 				return
 			}
 
@@ -488,8 +501,8 @@ walk: // Outer loop for walking the tree
 			for i := 0; i < len(n.indices); i++ {
 				if n.indices[i] == '/' {
 					n = n.children[i]
-					tsr = (len(n.path) == 1 && n.ps != nil) ||
-						(n.nType == catchAll && n.children[0].ps != nil)
+					value.tsr = (len(n.path) == 1 && n.intercepts != nil) ||
+						(n.nType == catchAll && n.children[0].intercepts != nil)
 					return
 				}
 			}
@@ -499,9 +512,9 @@ walk: // Outer loop for walking the tree
 
 		// Nothing found. We can recommend to redirect to the same URL with an
 		// extra trailing slash if a leaf exists for that path
-		tsr = (path == "/") ||
+		value.tsr = (path == "/") ||
 			(len(n.path) == len(path)+1 && n.path[len(path)] == '/' &&
-				path == n.path[:len(n.path)-1] && n.ps != nil)
+				path == n.path[:len(n.path)-1] && n.intercepts != nil)
 		return
 	}
 }

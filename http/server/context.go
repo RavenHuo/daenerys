@@ -2,17 +2,13 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync/atomic"
 	"time"
 
-	"git.inke.cn/BackendPlatform/daenerys-extras/modules/i18n"
-	"git.inke.cn/inkelogic/daenerys/utils"
-	"github.com/opentracing/opentracing-go"
+	"github.com/RavenHuo/daenerys/http/binding"
+
 	"golang.org/x/net/context"
 )
 
@@ -27,10 +23,10 @@ type Context struct {
 	Path         string // raw match path
 	Peer         string // 包含app_name的上游service_name
 	Namespace    string
-	Ctx          context.Context // for trace or others store
-	core         core.Core       // a control flow
+	Ctx          context.Context    // for trace or others store
+	intercepts   []HandlerIntercept // 拦截器
+	HandlerFunc  HandlerFunc        // 处理方法
 	w            *responseWriter
-	busiCode     int32
 	loggingExtra map[string]interface{}
 	// use url.ParseQuery cached the param query result from c.Request.URL.Query()
 	queryCache    url.Values
@@ -52,9 +48,7 @@ func (c *Context) reset() {
 	c.Peer = ""
 	c.Ctx = nil
 	c.Namespace = ""
-	c.core = nil
 	c.w = &responseWriter{}
-	c.busiCode = 0
 	c.loggingExtra = nil
 	c.queryCache = nil
 	c.bodyBuff = bytes.NewBuffer(nil)
@@ -65,7 +59,7 @@ func (c *Context) reset() {
 	c.simpleBaggage = nil
 }
 
-func (c *Context) chain() []core.Plugin {
+func (c *Context) requestNode() *nodeValue {
 	t := c.srv.trees
 	for i, tl := 0, len(t); i < tl; i++ {
 		if t[i].method != c.Request.Method {
@@ -73,13 +67,8 @@ func (c *Context) chain() []core.Plugin {
 		}
 		root := t[i].root
 		// plugin, urlparam, found, matchPath expression
-		plugins, params, _, mpath := root.getValue(c.Request.URL.Path, c.Params, false)
-		if plugins != nil {
-			c.Params = params
-			c.Path = mpath
-			return plugins
-		}
-		break
+		v := root.getValue(c.Request.URL.Path, c.Params, false)
+		return v
 	}
 	return nil
 }
@@ -88,90 +77,35 @@ func (c *Context) writeHeaderOnce() {
 	c.Response.writeHeaderOnce()
 }
 
-func (c *Context) Next() {
-	c.core.Next(c.Ctx)
-}
-
-func (c *Context) Abort() {
-	c.core.Abort()
-}
-
-func (c *Context) AbortErr(err error) {
-	c.core.AbortErr(err)
-}
-
-func (c *Context) Err() error {
-	return c.core.Err()
-}
-
 func (c *Context) TraceID() string {
 	return c.traceId
 }
 
-func (c *Context) SetBusiCode(code int32) {
-	atomic.StoreInt32(&c.busiCode, code)
-}
-
-func (c *Context) BusiCode() int32 {
-	return atomic.LoadInt32(&c.busiCode)
-}
-
-func (c *Context) LoggingExtra(vals ...interface{}) {
+func (c *Context) LoggingExtra(k string, v interface{}) {
 	if c.loggingExtra == nil {
 		c.loggingExtra = map[string]interface{}{}
 	}
-	if len(vals)%2 != 0 {
-		vals = append(vals, "<kv not match>")
-	}
-	size := len(vals)
-	for i := 0; i < size; i += 2 {
-		key := fmt.Sprintf("%v", vals[i])
-		c.loggingExtra[key] = vals[i+1]
-	}
+
+	c.loggingExtra[k] = v
+
 }
 
-func (c *Context) Bind(r *http.Request, model interface{}, atom ...interface{}) error {
-	return utils.Bind(r, model, atom...)
+func (c *Context) Bind(model interface{}) error {
+	return binding.Default(c.Request, model)
 }
 
-// write response, error include business code and error msg
-func (c *Context) JSON(data interface{}, err error) {
-	c.Response.WriteHeader(c.Response.Status())
-	w := utils.NewWrapResp(data, err)
-
-	if langs, ok := c.Ctx.Value(i18n.DaeI18nLangsKey).(string); ok && langs != "" {
-		if langs != "" {
-			w.Msg = i18n.T_([]string{langs}, w.Msg, "")
-		}
-	}
-
-	c.SetBusiCode(int32(w.Code))
-	_, _ = c.Response.WriteJSON(w)
+func (c *Context) BindJson(model interface{}) error {
+	return binding.WithType(c.Request, model, binding.BindJson)
 }
 
-// wrap on JSON
-func (c *Context) JSONAbort(data interface{}, err error) {
-	c.JSON(data, err)
-	c.Abort()
+func (c *Context) BindUri(model interface{}) error {
+	return binding.WithType(c.Request, model, binding.BindUri)
 }
 
-// JSONOrError will handle error and write either JSON or error to response.
-// good example:
-// ```
-//     resp, err := svc.MessageService()
-//     c.JSONOrError(resp, err)
-// ```
-// bad example:
-// ```
-//     resp, err := svc.MessageService()
-//     c.JSON(resp, err)
-// ```
-func (c *Context) JSONOrError(data interface{}, err error) {
-	if err != nil {
-		c.JSONAbort(nil, err)
-		return
-	}
-	c.JSON(data, nil)
+// write response, response code 200
+func (c *Context) JSON(data interface{}) {
+	c.Response.WriteHeader(http.StatusOK)
+	_, _ = c.Response.WriteJSON(data)
 }
 
 func (c *Context) DefaultQuery(key, defaultValue string) string {
@@ -225,12 +159,6 @@ func (c *Context) GetQueryArray(key string) ([]string, bool) {
 		return values, true
 	}
 	return []string{}, false
-}
-
-// write response, data include error info
-func (c *Context) Raw(data interface{}, code int32) {
-	c.SetBusiCode(code)
-	_, _ = c.Response.WriteJSON(data)
 }
 
 func (c *Context) Set(key string, value interface{}) {
@@ -327,49 +255,4 @@ func (c *Context) GetStringMapStringSlice(key string) (smss map[string][]string)
 		smss, _ = val.(map[string][]string)
 	}
 	return
-}
-
-// 从ctx中提取用户自定义的baggage信息到本地存储,在server接收到http请求时执行
-func (c *Context) extractBaggage() {
-	span := opentracing.SpanFromContext(c.Ctx)
-	if span == nil {
-		return
-	}
-	if c.simpleBaggage == nil {
-		c.simpleBaggage = make(map[string]string)
-	}
-	val := span.BaggageItem(utils.DaeBaggageHeaderPrefix + "baggage")
-	_ = json.Unmarshal([]byte(val), &c.simpleBaggage)
-}
-
-// 设置用户自定义信息到span baggage item中
-func (c *Context) SetBaggage(key, value string) context.Context {
-	if c.simpleBaggage == nil {
-		c.simpleBaggage = make(map[string]string)
-	}
-	k1 := utils.DaeBaggageHeaderPrefix + key
-	c.simpleBaggage[k1] = value
-	span := opentracing.SpanFromContext(c.Ctx)
-	b, _ := json.Marshal(c.simpleBaggage)
-	span.SetBaggageItem(utils.DaeBaggageHeaderPrefix+"baggage", string(b))
-	return opentracing.ContextWithSpan(c.Ctx, span)
-}
-
-// 获取已有的用户自定义baggage信息
-func (c *Context) Baggage(key string) string {
-	if c.simpleBaggage == nil {
-		return ""
-	}
-	k1 := utils.DaeBaggageHeaderPrefix + key
-	return c.simpleBaggage[k1]
-}
-
-// 遍历处理用户自定义的baggage信息
-func (c *Context) ForeachBaggage(handler func(key, val string) error) error {
-	for k, v := range c.simpleBaggage {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
 }

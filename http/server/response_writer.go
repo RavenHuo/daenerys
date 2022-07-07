@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"git.inke.cn/inkelogic/daenerys/config/encoder/json"
+	"github.com/RavenHuo/go-kit/encode/json"
 )
 
 type Responser interface {
