@@ -379,6 +379,8 @@ type nodeValue struct {
 
 //nolint:unparam
 func (n *node) getValue(path string, po Params, unescape bool) (value *nodeValue) {
+	value = &nodeValue{}
+	value.p = po
 walk: // Outer loop for walking the tree
 	for {
 		value.fullPath += n.path
@@ -400,7 +402,7 @@ walk: // Outer loop for walking the tree
 					// Nothing found.
 					// We can recommend to redirect to the same URL without a
 					// trailing slash if a leaf exists for that path.
-					value.tsr = path == "/" && n.intercepts != nil
+					value.tsr = path == "/" && n.handlerFunc != nil
 					return
 				}
 
@@ -445,15 +447,14 @@ walk: // Outer loop for walking the tree
 						return
 					}
 
-					if value.intercepts = n.intercepts; value.intercepts != nil {
-						value.handler = n.handlerFunc
+					if value.handler = n.handlerFunc; value.handler != nil {
 						return
 					}
 					if len(n.children) == 1 {
 						// No handle found. Check if a handle for this path + a
 						// trailing slash exists for TSR recommendation
 						n = n.children[0]
-						value.tsr = n.path == "/" && n.intercepts != nil
+						value.tsr = n.path == "/" && n.handlerFunc != nil
 					}
 
 					return
@@ -475,7 +476,6 @@ walk: // Outer loop for walking the tree
 						value.p[i].Value = path
 					}
 
-					value.intercepts = n.intercepts
 					value.handler = n.handlerFunc
 					return
 
@@ -486,8 +486,7 @@ walk: // Outer loop for walking the tree
 		} else if path == n.path {
 			// We should have reached the node containing the handle.
 			// Check if this node has a handle registered.
-			if value.intercepts = n.intercepts; value.intercepts != nil {
-				value.handler = n.handlerFunc
+			if value.handler = n.handlerFunc; value.handler != nil {
 				return
 			}
 
@@ -501,8 +500,8 @@ walk: // Outer loop for walking the tree
 			for i := 0; i < len(n.indices); i++ {
 				if n.indices[i] == '/' {
 					n = n.children[i]
-					value.tsr = (len(n.path) == 1 && n.intercepts != nil) ||
-						(n.nType == catchAll && n.children[0].intercepts != nil)
+					value.tsr = (len(n.path) == 1 && n.handlerFunc != nil) ||
+						(n.nType == catchAll && n.children[0].handlerFunc != nil)
 					return
 				}
 			}
@@ -514,7 +513,7 @@ walk: // Outer loop for walking the tree
 		// extra trailing slash if a leaf exists for that path
 		value.tsr = (path == "/") ||
 			(len(n.path) == len(path)+1 && n.path[len(path)] == '/' &&
-				path == n.path[:len(n.path)-1] && n.intercepts != nil)
+				path == n.path[:len(n.path)-1] && n.handlerFunc != nil)
 		return
 	}
 }

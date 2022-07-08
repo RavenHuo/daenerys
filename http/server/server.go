@@ -160,7 +160,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleHTTPRequest(ctx *Context) {
 	nodeValue := ctx.requestNode()
-	if nodeValue == nil {
+	if nodeValue.handler == nil {
 		if s.methodNotAllowed(ctx) {
 			ctx.Response.Header().Set("X-Trace-Id", ctx.traceId)
 			ctx.Response.WriteHeader(http.StatusMethodNotAllowed)
@@ -176,8 +176,7 @@ func (s *server) handleHTTPRequest(ctx *Context) {
 		return
 	}
 
-	nCtx := context.WithValue(ctx.Ctx, iCtxKey, ctx)
-
+	nCtx := context.Background()
 	tls.SetContext(nCtx)
 	defer tls.Flush()
 
@@ -283,7 +282,7 @@ func (s *server) methodNotAllowed(ctx *Context) bool {
 		// plugin, urlparam, found, matchPath expression
 		nodeValue := root.getValue(ctx.Request.URL.Path, ctx.Params, false)
 		// 存在 路径相同，但是请求方式不一样的node
-		if nodeValue != nil {
+		if nodeValue.handler != nil {
 			return true
 		}
 	}

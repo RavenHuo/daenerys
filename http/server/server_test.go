@@ -35,12 +35,10 @@ func InitTestServer(handlers map[string]HandlerFunc, serverPort int) {
 		s.GET(k, v)
 	}
 
-	go func() {
-		err := s.Run(fmt.Sprintf(":%d", serverPort))
-		if err != nil {
-			fmt.Println(err)
-		}
-	}()
+	err := s.Run(fmt.Sprintf(":%d", serverPort))
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	time.Sleep(1 * time.Second)
 }
