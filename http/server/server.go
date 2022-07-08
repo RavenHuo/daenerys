@@ -218,7 +218,7 @@ func (s *server) Filters(filters ...HandlerFilter) {
 }
 
 func (s *server) addRoute(method, path string, handler HandlerFunc, intercepts []HandlerIntercept) {
-	if path[0] != '/' || len(method) == 0 || len(intercepts) == 0 {
+	if path[0] != '/' || len(method) == 0 || handler == nil {
 		return
 	}
 	root := s.trees.get(method)
