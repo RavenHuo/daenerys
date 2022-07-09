@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RavenHuo/daenerys/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -60,6 +61,7 @@ func TestHttpServer_WriteHeader(t *testing.T) {
 			"/json/get/502": func(c *Context) {
 				c.Response.WriteHeader(502)
 				c.JSON(map[string]interface{}{"action": "get json"})
+				log.Info(c.Ctx, "hello")
 				return
 			},
 			"/json/get/400": func(c *Context) {

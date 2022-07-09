@@ -12,10 +12,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-type internalContext struct{}
-
-var iCtxKey = internalContext{}
-
 type Context struct {
 	Request      *http.Request
 	Response     Responser

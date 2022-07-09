@@ -11,21 +11,31 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const TraceIdField = "trace-id"
+
 func Error(ctx context.Context, msg string) {
-	logrus.Error(msg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Error(msg)
 }
 func Errorf(ctx context.Context, format string, args ...interface{}) {
-	logrus.Errorf(format, args...)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Errorf(format, args...)
 }
 func Info(ctx context.Context, msg string) {
-	logrus.Info(msg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(msg)
 }
 func Infof(ctx context.Context, format string, arg ...interface{}) {
-	logrus.Infof(format, arg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(format, arg)
 }
 func Warn(ctx context.Context, msg string) {
-	logrus.Warn(msg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Warn(msg)
 }
 func Warnf(ctx context.Context, format string, arg ...interface{}) {
-	logrus.Warnf(format, arg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Warnf(format, arg)
+}
+
+func getTraceId(ctx context.Context) string {
+	traceId := ctx.Value(TraceIdField)
+	if traceId == nil {
+		traceId = ""
+	}
+	return traceId.(string)
 }
