@@ -448,6 +448,7 @@ walk: // Outer loop for walking the tree
 					}
 
 					if value.handler = n.handlerFunc; value.handler != nil {
+						value.intercepts = n.intercepts
 						return
 					}
 					if len(n.children) == 1 {
@@ -477,6 +478,7 @@ walk: // Outer loop for walking the tree
 					}
 
 					value.handler = n.handlerFunc
+					value.intercepts = n.intercepts
 					return
 
 				default:
@@ -487,6 +489,7 @@ walk: // Outer loop for walking the tree
 			// We should have reached the node containing the handle.
 			// Check if this node has a handle registered.
 			if value.handler = n.handlerFunc; value.handler != nil {
+				value.intercepts = n.intercepts
 				return
 			}
 
