@@ -20,7 +20,7 @@ func Errorf(ctx context.Context, format string, args ...interface{}) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Errorf(format, args...)
 }
 func Info(ctx context.Context, msg string) {
-	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(msg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Info(msg)
 }
 func Infof(ctx context.Context, format string, arg ...interface{}) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(format, arg)
@@ -33,6 +33,9 @@ func Warnf(ctx context.Context, format string, arg ...interface{}) {
 }
 
 func getTraceId(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
 	traceId := ctx.Value(TraceIdField)
 	if traceId == nil {
 		traceId = ""

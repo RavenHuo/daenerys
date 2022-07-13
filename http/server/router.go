@@ -15,6 +15,7 @@ type Router interface {
 	PUT(string, HandlerFunc, ...HandlerIntercept) Router
 	OPTIONS(string, HandlerFunc, ...HandlerIntercept) Router
 	HEAD(string, HandlerFunc, ...HandlerIntercept) Router
+	// TODO use 拦截器
 }
 
 type RouterMgr struct {

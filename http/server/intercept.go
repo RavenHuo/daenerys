@@ -43,7 +43,7 @@ func sortHandlerFilter(filters []HandlerFilter) {
 func MakeFilterChain(filters []HandlerFilter) *HandlerFilterChain {
 	sortHandlerFilter(filters)
 	return &HandlerFilterChain{
-		pos:     0,
+		pos:     -1,
 		filters: filters,
 	}
 }
@@ -61,7 +61,12 @@ func (chain *HandlerFilterChain) DoFilter(ctx *Context) error {
 	if len(chain.filters) == 0 || chain.pos == len(chain.filters)-1 {
 		return nil
 	}
-	return chain.internalDoFilter(ctx)
+	chain.pos += 1
+	err := chain.internalDoFilter(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (chain *HandlerFilterChain) internalDoFilter(ctx *Context) error {
@@ -70,6 +75,5 @@ func (chain *HandlerFilterChain) internalDoFilter(ctx *Context) error {
 	if err != nil {
 		return errors.New(fmt.Sprintf("internalDoFilter:%s filter err %s", filter.Name(), err))
 	}
-	chain.pos += 1
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/RavenHuo/daenerys/internal/tls"
+	"github.com/RavenHuo/daenerys/log"
 	"github.com/RavenHuo/daenerys/utils"
 	"golang.org/x/net/context"
 )
@@ -30,7 +31,7 @@ type Server interface {
 type server struct {
 	RouterMgr
 	options      Options
-	pluginMu     sync.Mutex
+	mu           sync.Mutex
 	trees        methodTrees
 	srv          *http.Server
 	running      int32
@@ -39,6 +40,7 @@ type server struct {
 	paths        []string
 	onHijackMode bool
 	filter       []HandlerFilter
+	name         string
 }
 
 func NewServer(options ...Option) Server {
@@ -48,10 +50,10 @@ func NewServer(options ...Option) Server {
 			intercepts: nil,
 			basePath:   "/",
 		},
-		trees:    make(methodTrees, 0, 10),
-		pluginMu: sync.Mutex{},
-		pool:     sync.Pool{},
-		filter:   make([]HandlerFilter, 0, 2),
+		trees:  make(methodTrees, 0, 10),
+		mu:     sync.Mutex{},
+		pool:   sync.Pool{},
+		filter: make([]HandlerFilter, 0, 2),
 	}
 	s.pool.New = func() interface{} {
 		return s.allocContext()
@@ -70,6 +72,7 @@ func NewServer(options ...Option) Server {
 		},
 	}
 	s.RouterMgr.server = s
+	s.addDefaultRoute()
 	atomic.StoreInt32(&s.running, 0)
 
 	return s
@@ -104,10 +107,6 @@ func (s *server) Run(addr ...string) error {
 		}
 		fmt.Printf("start http server on %s\n", host)
 
-		//if !atomic.CompareAndSwapInt32(&s.running, 0, 1) {
-		//	err = fmt.Errorf("server has been running")
-		//	return
-		//}
 		if len(s.options.certFile) == 0 || len(s.options.keyFile) == 0 {
 			err = s.srv.Serve(ln)
 		} else {
@@ -151,6 +150,8 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx.reset()
 	defer s.pool.Put(ctx)
 
+	ctx.ServerName = s.name
+	ctx.Ctx = context.Background()
 	ctx.startTime = time.Now()
 	ctx.w.reset(w, s.options.respBodyLogMaxSize)
 	ctx.Request = r
@@ -162,14 +163,12 @@ func (s *server) handleHTTPRequest(ctx *Context) {
 	nodeValue := ctx.requestNode()
 	if nodeValue.handler == nil {
 		if s.methodNotAllowed(ctx) {
-			ctx.Response.Header().Set("X-Trace-Id", ctx.traceId)
 			ctx.Response.WriteHeader(http.StatusMethodNotAllowed)
 			_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
 			fmt.Printf("http server, method not allowd, request %v\n", *ctx.Request)
 			return
 		}
 
-		ctx.Response.Header().Set("X-Trace-Id", ctx.traceId)
 		ctx.Response.WriteHeader(http.StatusNotFound)
 		_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusNotFound)))
 		fmt.Printf(" http server, handlers not found, request %+v\n", *ctx.Request)
@@ -189,6 +188,7 @@ func (s *server) internalHandle(ctx *Context, nodeValue *nodeValue) {
 	defer func() {
 		err := recover()
 		if err != nil {
+			log.Errorf(ctx.Ctx, "internalHandle err :%s", err)
 			ctx.Response.WriteHeader(http.StatusInternalServerError)
 			_, _ = ctx.Response.Write([]byte(http.StatusText(http.StatusInternalServerError)))
 			return
@@ -202,7 +202,10 @@ func (s *server) internalHandle(ctx *Context, nodeValue *nodeValue) {
 		return
 	}
 	for _, ins := range nodeValue.intercepts {
-		ins.PreHandle(ctx)
+		// pre handle intercept
+		if !ins.PreHandle(ctx) {
+			return
+		}
 	}
 	nodeValue.handler(ctx)
 	for _, ins := range nodeValue.intercepts {
@@ -287,4 +290,10 @@ func (s *server) methodNotAllowed(ctx *Context) bool {
 		}
 	}
 	return false
+}
+
+func (s *server) addDefaultRoute() {
+	s.GET("/", func(c *Context) {
+		c.Response.Write([]byte("hello"))
+	})
 }

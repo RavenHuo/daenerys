@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/RavenHuo/daenerys/http/binding"
-
 	"golang.org/x/net/context"
 )
 
@@ -16,9 +15,7 @@ type Context struct {
 	Request      *http.Request
 	Response     Responser
 	Params       Params
-	Path         string // raw match path
-	Peer         string // 包含app_name的上游service_name
-	Namespace    string
+	Path         string             // raw match path
 	Ctx          context.Context    // for trace or others store
 	intercepts   []HandlerIntercept // 拦截器
 	HandlerFunc  HandlerFunc        // 处理方法
@@ -30,7 +27,7 @@ type Context struct {
 	printRespBody bool
 	printReqBody  bool
 	srv           *server
-	traceId       string
+	ServerName    string
 	startTime     time.Time
 	Keys          map[string]interface{}
 	simpleBaggage map[string]string
@@ -41,16 +38,12 @@ func (c *Context) reset() {
 	c.Response = nil
 	c.Params = c.Params[0:0]
 	c.Path = ""
-	c.Peer = ""
-	c.Ctx = nil
-	c.Namespace = ""
 	c.w = &responseWriter{}
 	c.loggingExtra = nil
 	c.queryCache = nil
 	c.bodyBuff = bytes.NewBuffer(nil)
 	c.printRespBody = true
 	c.printReqBody = true
-	c.traceId = ""
 	c.Keys = nil
 	c.simpleBaggage = nil
 }
@@ -71,10 +64,6 @@ func (c *Context) requestNode() *nodeValue {
 
 func (c *Context) writeHeaderOnce() {
 	c.Response.writeHeaderOnce()
-}
-
-func (c *Context) TraceID() string {
-	return c.traceId
 }
 
 func (c *Context) LoggingExtra(k string, v interface{}) {
