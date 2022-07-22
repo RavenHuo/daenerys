@@ -30,7 +30,9 @@ func InitTestServer(handlers map[string]HandlerFunc, serverPort int) {
 	//}
 
 	// server
-	s := NewServer(Name("danerys.test.service"))
+	options := &Options{}
+	options.Name("danerys.test.service")
+	s := NewServer(options)
 
 	for k, v := range handlers {
 		s.GET(k, v)
