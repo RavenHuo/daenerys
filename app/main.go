@@ -13,7 +13,8 @@ import (
 func main() {
 	firstFilter := &FirstFilter{}
 	secondFilter := &SecondFilter{}
-	httpServer := server.NewServer(server.Name("test"))
+	options := server.DefaultOptions().Name("test")
+	httpServer := server.NewServer(options)
 	httpServer.GET("/ping", ping, &intercept.FirstHandlerIntercept{}, &intercept.LogIntercept{})
 	httpServer.Filters(firstFilter, secondFilter)
 	httpServer.Run("0.0.0.0:8080")

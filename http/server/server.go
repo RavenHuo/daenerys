@@ -30,7 +30,7 @@ type Server interface {
 
 type server struct {
 	RouterMgr
-	options      Options
+	options      *Options
 	mu           sync.Mutex
 	trees        methodTrees
 	srv          *http.Server
@@ -43,7 +43,7 @@ type server struct {
 	name         string
 }
 
-func NewServer(options ...Option) Server {
+func NewServer(options *Options) Server {
 	context2.Background()
 	s := &server{
 		RouterMgr: RouterMgr{
@@ -58,7 +58,7 @@ func NewServer(options ...Option) Server {
 	s.pool.New = func() interface{} {
 		return s.allocContext()
 	}
-	s.options = newOptions(options...)
+	s.options = options
 	s.srv = &http.Server{
 		Handler:      s,
 		ReadTimeout:  s.options.readTimeout,
