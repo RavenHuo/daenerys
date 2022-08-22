@@ -7,6 +7,7 @@ package errors
 
 // Codes ecode error interface which has a code & message.
 type Codes interface {
+
 	// Error return Code in string form
 	Error() string
 	// Code get error code.
