@@ -12,6 +12,7 @@ type Codes interface {
 	Error() string
 	// Code get error code.
 	Code() int
+
 	// Message get code message.
 	Message() string
 	// Equal for compatible.
