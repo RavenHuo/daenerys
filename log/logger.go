@@ -13,23 +13,32 @@ import (
 
 const TraceIdField = "trace-id"
 
-func Error(ctx context.Context, msg string) {
+type DaenerysLogger struct{}
+
+func (d DaenerysLogger) Error(ctx context.Context, msg string) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Error(msg)
 }
-func Errorf(ctx context.Context, format string, args ...interface{}) {
+func (d DaenerysLogger) Errorf(ctx context.Context, format string, args ...interface{}) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Errorf(format, args...)
 }
-func Info(ctx context.Context, msg string) {
+func (d DaenerysLogger) Info(ctx context.Context, msg string) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Info(msg)
 }
-func Infof(ctx context.Context, format string, arg ...interface{}) {
+func (d DaenerysLogger) Infof(ctx context.Context, format string, arg ...interface{}) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(format, arg)
 }
-func Warn(ctx context.Context, msg string) {
+func (d DaenerysLogger) Warn(ctx context.Context, msg string) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Warn(msg)
 }
-func Warnf(ctx context.Context, format string, arg ...interface{}) {
+func (d DaenerysLogger) Warnf(ctx context.Context, format string, arg ...interface{}) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Warnf(format, arg)
+}
+
+func (d DaenerysLogger) Debug(ctx context.Context, msg string) {
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Debug(msg)
+}
+func (d DaenerysLogger) Debugf(ctx context.Context, format string, arg ...interface{}) {
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Debugf(format, arg)
 }
 
 func getTraceId(ctx context.Context) string {
