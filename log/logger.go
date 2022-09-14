@@ -25,20 +25,20 @@ func (d DaenerysLogger) Info(ctx context.Context, msg string) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Info(msg)
 }
 func (d DaenerysLogger) Infof(ctx context.Context, format string, arg ...interface{}) {
-	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(format, arg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Infof(format, arg...)
 }
 func (d DaenerysLogger) Warn(ctx context.Context, msg string) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Warn(msg)
 }
 func (d DaenerysLogger) Warnf(ctx context.Context, format string, arg ...interface{}) {
-	logrus.WithField(TraceIdField, getTraceId(ctx)).Warnf(format, arg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Warnf(format, arg...)
 }
 
 func (d DaenerysLogger) Debug(ctx context.Context, msg string) {
 	logrus.WithField(TraceIdField, getTraceId(ctx)).Debug(msg)
 }
 func (d DaenerysLogger) Debugf(ctx context.Context, format string, arg ...interface{}) {
-	logrus.WithField(TraceIdField, getTraceId(ctx)).Debugf(format, arg)
+	logrus.WithField(TraceIdField, getTraceId(ctx)).Debugf(format, arg...)
 }
 
 func getTraceId(ctx context.Context) string {
