@@ -7,7 +7,7 @@ package main
 
 import (
 	"github.com/RavenHuo/daenerys/http/server"
-	"github.com/RavenHuo/daenerys/log"
+	"github.com/RavenHuo/go-kit/log"
 )
 
 type FirstFilter struct{}

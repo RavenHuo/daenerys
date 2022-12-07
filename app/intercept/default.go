@@ -6,10 +6,10 @@
 package intercept
 
 import (
+	"github.com/RavenHuo/go-kit/log"
 	"net/http"
 
 	"github.com/RavenHuo/daenerys/http/server"
-	"github.com/RavenHuo/daenerys/log"
 )
 
 type FirstHandlerIntercept struct {

@@ -7,11 +7,11 @@ package intercept
 
 import (
 	"fmt"
+	"github.com/RavenHuo/go-kit/log"
 	"math"
 
 	"github.com/RavenHuo/daenerys/http/server"
 	"github.com/RavenHuo/daenerys/internal/tls"
-	"github.com/RavenHuo/daenerys/log"
 	"golang.org/x/net/context"
 )
 
