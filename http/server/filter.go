@@ -16,7 +16,7 @@ import (
 // 过滤器
 type HandlerFilter interface {
 	core.Order
-	DoFilter(*Context, *HandlerFilterChain) error
+	DoFilter(*RContext, *HandlerFilterChain) error
 }
 
 func sortHandlerFilter(filters []HandlerFilter) {
@@ -42,7 +42,7 @@ type HandlerFilterChain struct {
 	filters []HandlerFilter
 }
 
-func (chain *HandlerFilterChain) DoFilter(ctx *Context) error {
+func (chain *HandlerFilterChain) DoFilter(ctx *RContext) error {
 	if len(chain.filters) == 0 || chain.pos == len(chain.filters)-1 {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (chain *HandlerFilterChain) DoFilter(ctx *Context) error {
 	return nil
 }
 
-func (chain *HandlerFilterChain) internalDoFilter(ctx *Context) error {
+func (chain *HandlerFilterChain) internalDoFilter(ctx *RContext) error {
 	filter := chain.filters[chain.pos]
 	err := filter.DoFilter(ctx, chain)
 	if err != nil {

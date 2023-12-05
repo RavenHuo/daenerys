@@ -2,17 +2,16 @@ package server
 
 import (
 	"context"
+	"github.com/RavenHuo/go-pkg/log"
+	"github.com/magiconair/properties/assert"
 	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/RavenHuo/daenerys/log"
-	"github.com/magiconair/properties/assert"
 )
 
 func TestContext_SetGet(t *testing.T) {
-	ctx := Context{}
+	ctx := RContext{}
 
 	ctx.Set("foo", "bar")
 
@@ -60,7 +59,7 @@ func TestContext_MustGet(t *testing.T) {
 		}
 	}()
 
-	ctx := Context{}
+	ctx := RContext{}
 
 	ctx.Set("foo", "bar")
 

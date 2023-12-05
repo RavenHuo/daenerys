@@ -7,7 +7,7 @@ package intercept
 
 import (
 	"fmt"
-	"github.com/RavenHuo/go-kit/log"
+	"github.com/RavenHuo/go-pkg/trace"
 	"math"
 
 	"github.com/RavenHuo/daenerys/http/server"
@@ -28,11 +28,11 @@ func (l *LogIntercept) Name() string {
 	return "LogIntercept"
 }
 
-func (l *LogIntercept) PreHandle(c *server.Context) bool {
+func (l *LogIntercept) PreHandle(c *server.RContext) bool {
 	traceId := fmt.Sprintf(traceIdFormat, c.ServerName, tls.GoID())
-	c.Ctx = context.WithValue(c.Ctx, log.TraceIdField, traceId)
+	c.Ctx = context.WithValue(c.Ctx, trace.TraceIdField, traceId)
 	return true
 }
 
-func (l *LogIntercept) AfterCompletion(context *server.Context) {
+func (l *LogIntercept) AfterCompletion(context *server.RContext) {
 }

@@ -15,9 +15,9 @@ import (
 type HandlerIntercept interface {
 	core.Order
 	// 前置处理
-	PreHandle(*Context) bool
+	PreHandle(*RContext) bool
 	// 后置处理
-	AfterCompletion(*Context)
+	AfterCompletion(*RContext)
 }
 
 func sortHandlerIntercept(intercepts []HandlerIntercept) {

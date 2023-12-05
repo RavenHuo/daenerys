@@ -15,7 +15,6 @@ const (
 
 type Options struct {
 	tracer             opentracing.Tracer
-	serviceName        string
 	port               int
 	readTimeout        time.Duration
 	writeTimeout       time.Duration
@@ -53,11 +52,6 @@ func (o *Options) Tracer(tracer opentracing.Tracer) *Options {
 
 func (o *Options) Port(port int) *Options {
 	o.port = port
-	return o
-}
-
-func (o *Options) Name(serviceName string) *Options {
-	o.serviceName = serviceName
 	return o
 }
 

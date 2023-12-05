@@ -3,13 +3,13 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/RavenHuo/go-pkg/log"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/RavenHuo/daenerys/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,7 +31,6 @@ func InitTestServer(handlers map[string]HandlerFunc, serverPort int) {
 
 	// server
 	options := &Options{}
-	options.Name("danerys.test.service")
 	s := NewServer(options)
 
 	for k, v := range handlers {
@@ -55,34 +54,34 @@ func TestHttpServer_WriteHeader(t *testing.T) {
 
 	InitTestServer(
 		map[string]HandlerFunc{
-			"/json/get/500": func(c *Context) {
+			"/json/get/500": func(c *RContext) {
 				c.Response.WriteHeader(500)
 				c.JSON(getJson)
 				return
 			},
-			"/json/get/502": func(c *Context) {
+			"/json/get/502": func(c *RContext) {
 				c.Response.WriteHeader(502)
 				c.JSON(map[string]interface{}{"action": "get json"})
 				log.Info(c.Ctx, "hello")
 				return
 			},
-			"/json/get/400": func(c *Context) {
+			"/json/get/400": func(c *RContext) {
 				c.Response.WriteHeader(400)
 				b, _ := json.Marshal(getJson)
 				_, _ = c.Response.Write(b)
 				return
 			},
-			"/json/post/403": func(c *Context) {
+			"/json/post/403": func(c *RContext) {
 				c.Response.WriteHeader(403)
 				_, _ = c.Response.WriteString("hello world 403")
 				return
 			},
-			"/json/post/200": func(c *Context) {
+			"/json/post/200": func(c *RContext) {
 				c.Response.WriteHeader(200)
 				c.JSON(map[string]interface{}{"action": "post json"})
 				return
 			},
-			"/add/header": func(c *Context) {
+			"/add/header": func(c *RContext) {
 				c.Response.Header().Add("x-my-header-1", "hello world 1")
 				c.Response.Header().Add("x-my-header-2", "hello world 2")
 				c.Response.Header().Add("x-my-header-3", "hello world 3")

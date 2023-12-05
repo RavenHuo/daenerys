@@ -7,7 +7,7 @@ package main
 
 import (
 	"github.com/RavenHuo/daenerys/http/server"
-	"github.com/RavenHuo/go-kit/log"
+	"github.com/RavenHuo/go-pkg/log"
 )
 
 type FirstFilter struct{}
@@ -19,7 +19,7 @@ func (f *FirstFilter) Name() string {
 	return "FirstFilter"
 }
 
-func (f *FirstFilter) DoFilter(c *server.Context, chain *server.HandlerFilterChain) error {
+func (f *FirstFilter) DoFilter(c *server.RContext, chain *server.HandlerFilterChain) error {
 	log.Infof(c.Ctx, "hello 1")
 	return chain.DoFilter(c)
 }
@@ -33,7 +33,7 @@ func (s *SecondFilter) Name() string {
 	return "SecondFilter"
 }
 
-func (s *SecondFilter) DoFilter(c *server.Context, chain *server.HandlerFilterChain) error {
+func (s *SecondFilter) DoFilter(c *server.RContext, chain *server.HandlerFilterChain) error {
 	log.Info(c.Ctx, "hello 2")
 	return chain.DoFilter(c)
 }

@@ -3,6 +3,7 @@ package server
 import (
 	context2 "context"
 	"fmt"
+	"github.com/RavenHuo/go-pkg/log"
 	"net"
 	"net/http"
 	"strconv"
@@ -12,13 +13,12 @@ import (
 	"time"
 
 	"github.com/RavenHuo/daenerys/internal/tls"
-	"github.com/RavenHuo/daenerys/log"
 	"github.com/RavenHuo/daenerys/utils"
 	"golang.org/x/net/context"
 )
 
 // core plugin encapsulation
-type HandlerFunc func(c *Context)
+type HandlerFunc func(c *RContext)
 
 type Server interface {
 	Router
@@ -138,15 +138,15 @@ func (s *server) Stop() error {
 	return nil
 }
 
-func (s *server) allocContext() *Context {
-	return &Context{
+func (s *server) allocContext() *RContext {
+	return &RContext{
 		srv: s,
 	}
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	ctx := s.pool.Get().(*Context)
+	ctx := s.pool.Get().(*RContext)
 	ctx.reset()
 	defer s.pool.Put(ctx)
 
@@ -159,7 +159,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handleHTTPRequest(ctx)
 }
 
-func (s *server) handleHTTPRequest(ctx *Context) {
+func (s *server) handleHTTPRequest(ctx *RContext) {
 	nodeValue := ctx.requestNode()
 	if nodeValue.handler == nil {
 		if s.methodNotAllowed(ctx) {
@@ -184,7 +184,7 @@ func (s *server) handleHTTPRequest(ctx *Context) {
 }
 
 // internal handler http request
-func (s *server) internalHandle(ctx *Context, nodeValue *nodeValue) {
+func (s *server) internalHandle(ctx *RContext, nodeValue *nodeValue) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -274,7 +274,7 @@ func (s *server) uploadServerPath() {
 }
 
 // 判断是不是请求方式出错
-func (s *server) methodNotAllowed(ctx *Context) bool {
+func (s *server) methodNotAllowed(ctx *RContext) bool {
 	// 405
 	t := s.trees
 	for i, tl := 0, len(t); i < tl; i++ {
@@ -293,7 +293,7 @@ func (s *server) methodNotAllowed(ctx *Context) bool {
 }
 
 func (s *server) addDefaultRoute() {
-	s.GET("/", func(c *Context) {
+	s.GET("/", func(c *RContext) {
 		c.Response.Write([]byte("hello"))
 	})
 }

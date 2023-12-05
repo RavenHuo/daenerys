@@ -16,7 +16,7 @@ package server
 //var fakeHandlerValue string
 //
 //func fakeHandler(val string) []core.Plugin {
-//	var f HandlerFunc = func(c *Context) {
+//	var f HandlerFunc = func(c *RContext) {
 //		fakeHandlerValue = val
 //	}
 //	//return f
@@ -47,7 +47,7 @@ package server
 //		} else {
 //			//new flow
 //			nFlow := core.New(plugins)
-//			ctx := &Context{}
+//			ctx := &RContext{}
 //			ctx.Ctx = context.WithValue(context.Background(), iCtxKey, ctx)
 //			nFlow.Next(ctx.Ctx)
 //			if fakeHandlerValue != request.route {

@@ -6,7 +6,7 @@
 package intercept
 
 import (
-	"github.com/RavenHuo/go-kit/log"
+	"github.com/RavenHuo/go-pkg/log"
 	"net/http"
 
 	"github.com/RavenHuo/daenerys/http/server"
@@ -23,13 +23,13 @@ func (f *FirstHandlerIntercept) Name() string {
 	return "FirstHandlerIntercept"
 }
 
-func (f FirstHandlerIntercept) PreHandle(context *server.Context) bool {
+func (f FirstHandlerIntercept) PreHandle(context *server.RContext) bool {
 	context.Response.WriteHeader(http.StatusUnauthorized)
 	_, _ = context.Response.Write([]byte(http.StatusText(http.StatusUnauthorized)))
 	log.Info(context.Ctx, "401")
 	return false
 }
 
-func (f FirstHandlerIntercept) AfterCompletion(context *server.Context) {
+func (f FirstHandlerIntercept) AfterCompletion(context *server.RContext) {
 	log.Info(context.Ctx, "FirstHandlerIntercept AfterCompletion")
 }

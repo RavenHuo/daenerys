@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/RavenHuo/go-kit/encode/json"
+	"github.com/RavenHuo/go-pkg/encode/json"
 )
 
 type Responser interface {

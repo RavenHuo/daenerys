@@ -9,7 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/RavenHuo/go-kit/encode/json"
+	"github.com/RavenHuo/go-pkg/encode/json"
 )
 
 type bindingJson struct{}

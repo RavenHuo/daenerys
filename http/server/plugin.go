@@ -27,9 +27,9 @@ package server
 //
 //
 //func (s *server) logging() HandlerIntercept {
-//	return core.Function(func(ctx context.Context, flow core.Core) {
+//	return core.Function(func(ctx context.RContext, flow core.Core) {
 //		defer func() {
-//			cc := ctx.Value(iCtxKey).(*Context)
+//			cc := ctx.Value(iCtxKey).(*RContext)
 //			rc := recover()
 //			if rc != nil {
 //				logging.CrashLogf("recover panic info:%q,raw request method:%s,uri:%s\n", rc, cc.Request.Method, cc.Request.URL.String())
@@ -99,16 +99,16 @@ package server
 //}
 //
 //func (s *server) traceIDHeader() core.Plugin {
-//	return core.Function(func(ctx context.Context, flow core.Core) {
-//		cc := ctx.Value(iCtxKey).(*Context)
+//	return core.Function(func(ctx context.RContext, flow core.Core) {
+//		cc := ctx.Value(iCtxKey).(*RContext)
 //		cc.Response.Header().Set("X-Trace-Id", cc.TraceID())
 //	})
 //}
 //
 //func (s *server) metric() core.Plugin {
-//	return core.Function(func(ctx context.Context, flow core.Core) {
+//	return core.Function(func(ctx context.RContext, flow core.Core) {
 //		flow.Next(ctx)
-//		cc := ctx.Value(iCtxKey).(*Context)
+//		cc := ctx.Value(iCtxKey).(*RContext)
 //		// 优先使用用户设置的busiCode
 //		code := cc.BusiCode()
 //		if err := flow.Err(); err != nil {
@@ -129,11 +129,11 @@ package server
 //}
 //
 //func (s *server) rateLimit() core.Plugin {
-//	return core.Function(func(ctx context.Context, flow core.Core) {
+//	return core.Function(func(ctx context.RContext, flow core.Core) {
 //		if s.options.limiter == nil {
 //			return
 //		}
-//		cc := ctx.Value(iCtxKey).(*Context)
+//		cc := ctx.Value(iCtxKey).(*RContext)
 //		lim := s.options.limiter.GetLimiter(ratelimit.ServerLimiterType, cc.Namespace, cc.Peer, cc.Path)
 //		if lim != nil && !lim.Allow() {
 //			err := flow.Err()
@@ -148,12 +148,12 @@ package server
 //}
 //
 //func (s *server) breaker(path string) core.Plugin {
-//	return core.Function(func(ctx context.Context, flow core.Core) {
+//	return core.Function(func(ctx context.RContext, flow core.Core) {
 //		if s.options.breaker == nil {
 //			return
 //		}
 //
-//		cc := ctx.Value(iCtxKey).(*Context)
+//		cc := ctx.Value(iCtxKey).(*RContext)
 //		brk := s.options.breaker.GetBreaker(breaker.ServerBreakerType, cc.Namespace, "", path)
 //		if brk == nil {
 //			return
@@ -168,7 +168,7 @@ package server
 //	})
 //}
 //
-//func (s *server) methodNotAllowed(ctx *Context) bool {
+//func (s *server) methodNotAllowed(ctx *RContext) bool {
 //	// 405
 //	t := s.trees
 //	for i, tl := 0, len(t); i < tl; i++ {
@@ -188,13 +188,13 @@ package server
 //// Deprecated: PrintRespBody func should not use anymore.
 //// Filters PrintBodyLog func instead
 //func PrintRespBody(b bool) HandlerFunc {
-//	return func(c *Context) {
+//	return func(c *RContext) {
 //		c.printRespBody = b
 //	}
 //}
 //
 //func PrintBodyLog(printReq, printResp bool) HandlerFunc {
-//	return func(c *Context) {
+//	return func(c *RContext) {
 //		c.printReqBody = printReq
 //		c.printRespBody = printResp
 //	}
