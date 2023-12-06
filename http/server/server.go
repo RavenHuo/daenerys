@@ -1,9 +1,10 @@
 package server
 
 import (
-	context2 "context"
+	"context"
 	"fmt"
 	"github.com/RavenHuo/go-pkg/log"
+	"github.com/RavenHuo/go-pkg/utils/nets"
 	"net"
 	"net/http"
 	"strconv"
@@ -13,8 +14,6 @@ import (
 	"time"
 
 	"github.com/RavenHuo/daenerys/internal/tls"
-	"github.com/RavenHuo/daenerys/utils"
-	"golang.org/x/net/context"
 )
 
 // core plugin encapsulation
@@ -44,7 +43,7 @@ type server struct {
 }
 
 func NewServer(options *Options) Server {
-	context2.Background()
+	context.Background()
 	s := &server{
 		RouterMgr: RouterMgr{
 			intercepts: nil,
@@ -251,12 +250,12 @@ func getRemoteIP(r *http.Request) string {
 		for i := len(addresses) - 1; i >= 0; i-- {
 			ip := addresses[i]
 			if len(ip) > 0 {
-				return utils.IPFormat(ip)
+				return nets.IPFormat(ip)
 			}
 		}
 	}
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return utils.IPFormat(ip)
+	return nets.IPFormat(ip)
 }
 
 // TODO
