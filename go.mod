@@ -3,7 +3,7 @@ module github.com/RavenHuo/daenerys
 go 1.16
 
 require (
-	github.com/RavenHuo/go-pkg v0.0.0-20231205103347-9a5aaf7445cb
+	github.com/RavenHuo/go-pkg v0.0.0-20231222134547-2d6b73dc7ce6
 	github.com/go-playground/universal-translator v0.18.0 // indirect
 	github.com/go-playground/validator v9.31.0+incompatible
 	github.com/gorilla/schema v1.2.0
